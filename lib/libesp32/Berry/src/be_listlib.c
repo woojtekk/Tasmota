@@ -134,9 +134,15 @@ static int item_range(bvm *vm)
     /* get index range */
     be_getmember(vm, 2, "__lower__");
     lower = be_toint(vm, -1);
+    if (lower < 0) {
+        lower = size + lower;
+    }
     be_pop(vm, 1);
     be_getmember(vm, 2, "__upper__");
     upper = be_toint(vm, -1);
+    if (upper < 0) {
+        upper = size + upper;
+    }
     be_pop(vm, 1);
     /* protection scope */
     upper = upper < size ? upper : size - 1;
@@ -333,24 +339,23 @@ static int m_merge(bvm *vm)
     be_return(vm); /* return self */
 }
 
-static void connect(bvm *vm, bvalue *begin, bvalue *end, const char * delimiter)
+static void connect(bvm *vm, bvalue *begin, bvalue *end, const char * delimiter, bbool first_element)
 {
     size_t l0 = be_strlen(vm, -1), len = l0;
     size_t d = delimiter ? strlen(delimiter) : 0;   /* len of delimiter */
-    bbool non_empty = l0 > 0;  /* is the string non-empty, i.e. needs a prefix delimiter */
     char *buf, *p;
     bvalue *it;
     for (it = begin; it < end; ++it) {
         len += str_len(var_tostr(it)) + d;
     }
-    if (!non_empty) {
+    if (first_element) {
         len -= d;   /* remove size for first delimiter non needed */
     }
     buf = be_pushbuffer(vm, len);
     memcpy(buf, be_tostring(vm, -2), l0);
     p = buf + l0;
     for (it = begin; it < end; ++it) {
-        if ((it != begin || non_empty) && delimiter) {
+        if ((it != begin || !first_element) && delimiter) {
             /* add delimiter */
             memcpy(p, delimiter, d);
             p += d;
@@ -370,11 +375,15 @@ static void list_concat(bvm *vm, blist *list, const char * delimiter)
     bvalue *it, *begin = be_list_data(list);
     bvalue *end = be_list_end(list);
     be_pushstring(vm, ""); /* push a empty string */
+    bbool first_element = btrue;
     for (it = begin; it < end;) {
         for (; it < end && var_isstr(it); ++it);
-        connect(vm, begin, it, delimiter); /* connect string list */
+        if (begin < it) {
+            connect(vm, begin, it, delimiter, first_element); /* connect string list */
+            first_element = bfalse;
+        }
         if (it < end) {
-            if (delimiter && be_strlen(vm, -1) > 0) {
+            if (delimiter && !first_element) {
                 be_pushstring(vm, delimiter);
                 be_strconcat(vm, -2);
                 be_pop(vm, 1);
@@ -386,6 +395,7 @@ static void list_concat(bvm *vm, blist *list, const char * delimiter)
             be_strconcat(vm, -2);
             be_pop(vm, 1);
             begin = ++it;
+            first_element = bfalse;
         }
     }
 }
